@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.pyc
+.env
+venv/
+env/
+
+# Flutter
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+build/
+ios/
+android/
+web/
+# Except for user-editable files
+!/ios/Runner/GoogleService-Info.plist
+!/android/app/google-services.json
+
+# IDE files
+.idea/
+.vscode/
+*.iml

@@ -1,0 +1,11 @@
+version: 1.0
+classification_rules:
+  - keywords: ["You have received"]
+    category: "Income"
+    transaction_type: "Credit"
+  - keywords: ["paid to"]
+    category: "Expense"
+    transaction_type: "Debit"
+  - keywords: ["Withdraw"]
+    category: "Withdrawal"
+    transaction_type: "Debit"
