@@ -1,12 +1,9 @@
-// mobile_app/lib/main.dart - THE DYNAMIC VERSION
+// mobile_app/lib/main.dart - (NOW WITH TRANSACTION LIST)
 import 'package:flutter/material.dart';
 import 'package:telephony/telephony.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
-
-// --- IMPORTANT: YOUR LAPTOP'S IP ADDRESS ---
-const String apiBaseUrl = 'http://192.168.0.111:8000/analyze';
-// ---------------------------------------------------------
+import 'transactions_screen.dart'; // <-- 1. IMPORT OUR NEW SCREEN
 
 void main() {
   runApp(const HustlerOSApp());
@@ -30,7 +27,6 @@ class HustlerOSApp extends StatelessWidget {
   }
 }
 
-// We convert the widget to a StatefulWidget to manage changing data
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
 
@@ -39,31 +35,30 @@ class DashboardScreen extends StatefulWidget {
 }
 
 class _DashboardScreenState extends State<DashboardScreen> {
-  // State variables to hold our data
   String _hustleScore = "--";
   String _totalIncome = "0";
   String _totalExpenses = "0";
   bool _isLoading = false;
+
+  // 2. CREATE A VARIABLE TO HOLD OUR TRANSACTIONS
+  List<dynamic> _parsedTransactions = [];
 
   final Telephony telephony = Telephony.instance;
 
   Future<void> analyzeSms() async {
     setState(() {
       _isLoading = true;
+      _parsedTransactions = []; // Clear old list
     });
 
-    // 1. Request SMS permissions
     bool? permissionsGranted = await telephony.requestSmsPermissions;
     if (permissionsGranted != true) {
-      // Handle permission denial
       setState(() {
         _isLoading = false;
       });
-      // You could show a snackbar message here
       return;
     }
 
-    // 2. Read SMS messages (only M-Pesa)
     List<SmsMessage> messages = await telephony.getInboxSms(
       columns: [SmsColumn.BODY],
       filter: SmsFilter.where(SmsColumn.ADDRESS).equals('MPESA'),
@@ -71,7 +66,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
     List<String> messageBodies = messages.map((m) => m.body ?? '').toList();
 
-    // 3. Call the Backend API
+    // -- Make sure to update your IP here --
+    const String apiBaseUrl = 'http://192.168.1.106:8000/analyze';
+
     try {
       final response = await http.post(
         Uri.parse(apiBaseUrl),
@@ -81,7 +78,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
-        // 4. Update the UI with the new data
         setState(() {
           _hustleScore = data['hustle_score']['score'].toString();
           _totalIncome = data['hustle_score']['total_income'].toStringAsFixed(
@@ -89,17 +85,31 @@ class _DashboardScreenState extends State<DashboardScreen> {
           );
           _totalExpenses = data['hustle_score']['total_expenses']
               .toStringAsFixed(0);
+
+          // 3. SAVE THE FULL LIST FROM THE API RESPONSE
+          _parsedTransactions = data['parsed_transactions'];
         });
-      } else {
-        // Handle API error
       }
     } catch (e) {
-      // Handle network or other errors
       print('Error calling API: $e');
     } finally {
       setState(() {
         _isLoading = false;
       });
+    }
+  }
+
+  // 4. FUNCTION TO OPEN THE NEW SCREEN
+  void _openTransactionsPage() {
+    // Only navigate if we have transactions to show
+    if (_parsedTransactions.isNotEmpty) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) =>
+              TransactionsScreen(transactions: _parsedTransactions),
+        ),
+      );
     }
   }
 
@@ -119,6 +129,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            // ... (Hustle Score Card is the same) ...
             Card(
               elevation: 4,
               shape: RoundedRectangleBorder(
@@ -146,6 +157,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               ),
             ),
             const SizedBox(height: 24),
+            // ... (Income/Expense Row is the same) ...
             Row(
               children: [
                 Expanded(
@@ -167,15 +179,28 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 ),
               ],
             ),
+            const SizedBox(height: 16),
+
+            // 5. ADD THE NEW "VIEW TRANSACTIONS" BUTTON
+            TextButton(
+              onPressed: _openTransactionsPage,
+              child: const Text(
+                'View All Transactions',
+                style: TextStyle(
+                  fontSize: 16,
+                  color: Colors.green,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+
             const Spacer(),
             ElevatedButton.icon(
               icon: const Icon(Icons.sms),
               label: _isLoading
                   ? const CircularProgressIndicator(color: Colors.white)
                   : const Text('Analyze M-Pesa SMS'),
-              onPressed: _isLoading
-                  ? null
-                  : analyzeSms, // Call the analyzeSms function
+              onPressed: _isLoading ? null : analyzeSms,
               style: ElevatedButton.styleFrom(
                 padding: const EdgeInsets.symmetric(vertical: 16),
                 backgroundColor: Colors.black,
@@ -196,7 +221,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 }
 
-// InfoCard widget remains the same
+// ... (InfoCard widget is the same) ...
 class InfoCard extends StatelessWidget {
   final String title;
   final String amount;
