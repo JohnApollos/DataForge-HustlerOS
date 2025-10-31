@@ -90,11 +90,6 @@ def calculate_hustle_score(transactions, period="all"):
     # 3. NEW: Get the top 5 expenses from the *same* filtered list
     top_expenses = _get_top_expenses(filtered_tx)
 
-    # Inside calculate_hustle_score, just before return
-    print(f"DEBUG: Period: {period}")
-    print(f"DEBUG: Total Income: {total_income}, Total Expenses: {total_expenses}")
-    print(f"DEBUG: Top Expenses: {top_expenses}")
-
     return {
         "score": score,
         "total_income": total_income,
