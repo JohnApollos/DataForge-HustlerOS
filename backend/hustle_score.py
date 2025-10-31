@@ -1,67 +1,104 @@
-# backend/hustle_score.py - (VERSION 2 - Now with Date Filtering)
+# backend/hustle_score.py - (VERSION 3 - Now with Pie Chart Data)
 from datetime import datetime, timedelta
+from collections import defaultdict
 
-def calculate_hustle_score(transactions, period="all"):
+def _filter_transactions(transactions, period="all"):
     """
-    Calculates the hustle score based on a list of parsed transactions
-    and a time period ('week', 'month', or 'all').
+    Internal helper function to filter transactions by date.
+    Returns a new list of filtered transactions.
     """
-    
-    # --- New Feature: Date Filtering ---
-    # We are in Kenya, so we can use datetime.now()
     now = datetime.now()
     start_date = None
 
     if period == "week":
-        # Start date is 7 days ago
         start_date = now - timedelta(days=7)
     elif period == "month":
-        # Start date is 30 days ago
         start_date = now - timedelta(days=30)
     
-    total_income = 0.0
-    total_expenses = 0.0
-
+    filtered_list = []
     for tx in transactions:
         tx_type = tx.get("type")
         tx_date_str = tx.get("date")
         
-        # Skip if we don't have a date or type
         if not tx_type or not tx_date_str:
             continue
             
-        # --- New Filter Logic ---
         if start_date:
             try:
-                # Convert the transaction's date string back into a datetime object
                 tx_date = datetime.fromisoformat(tx_date_str)
-                # If the transaction date is *before* our start date, skip it
                 if tx_date < start_date:
                     continue
             except (ValueError, TypeError):
-                continue # Skip if date is invalid
+                continue
+        
+        filtered_list.append(tx)
+    
+    return filtered_list
 
-        # --- Original Calculation Logic ---
+def _get_top_expenses(filtered_transactions):
+    """
+    NEW: Analyzes filtered transactions to find top 5 expense categories.
+    """
+    expenses = defaultdict(float) # A dictionary to sum expenses by party
+    
+    for tx in filtered_transactions:
+        if tx.get("type") == "Debit":
+            party = tx.get("party", "Other")
+            amount = tx.get("amount", 0.0)
+            expenses[party] += amount
+            
+    # Sort the expenses from highest to lowest
+    sorted_expenses = sorted(expenses.items(), key=lambda item: item[1], reverse=True)
+    
+    # Get the top 5
+    top_5 = sorted_expenses[:5]
+    
+    # Format for the pie chart
+    formatted_top_5 = [
+        {"name": name, "amount": amount} for name, amount in top_5
+    ]
+    
+    return formatted_top_5
+
+def calculate_hustle_score(transactions, period="all"):
+    """
+    Calculates the hustle score and top expenses based on a list of
+    parsed transactions and a time period.
+    """
+    
+    # 1. Filter transactions by the selected period
+    filtered_tx = _filter_transactions(transactions, period)
+    
+    total_income = 0.0
+    total_expenses = 0.0
+
+    for tx in filtered_tx:
         amount = tx.get("amount", 0.0)
-        if tx_type == "Credit":
+        if tx.get("type") == "Credit":
             total_income += amount
-        elif tx_type == "Debit":
+        elif tx.get("type") == "Debit":
             total_expenses += amount
 
-    # Calculate score
+    # 2. Calculate the score
     if total_expenses == 0:
-        # If no expenses, score is 100 (or 50 if no income either)
         score = 100 if total_income > 0 else 50
     else:
-        # Our original formula
         ratio = total_income / total_expenses
         score = int(ratio * 50)
-        # Cap the score at 100
-        score = min(score, 100)
+        score = min(score, 100) # Cap at 100
+
+    # 3. NEW: Get the top 5 expenses from the *same* filtered list
+    top_expenses = _get_top_expenses(filtered_tx)
+
+    # Inside calculate_hustle_score, just before return
+    print(f"DEBUG: Period: {period}")
+    print(f"DEBUG: Total Income: {total_income}, Total Expenses: {total_expenses}")
+    print(f"DEBUG: Top Expenses: {top_expenses}")
 
     return {
         "score": score,
         "total_income": total_income,
         "total_expenses": total_expenses,
-        "period": period
+        "period": period,
+        "top_expenses": top_expenses # <-- We've added our new data here!
     }
