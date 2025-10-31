@@ -1,43 +1,67 @@
-# backend/hustle_score.py
-from datetime import datetime
-from typing import List, Dict
+# backend/hustle_score.py - (VERSION 2 - Now with Date Filtering)
+from datetime import datetime, timedelta
 
-def calculate_hustle_score(transactions: List[Dict]) -> Dict:
+def calculate_hustle_score(transactions, period="all"):
     """
-    Calculates the Hustle Score based on a list of parsed transactions.
-    v0.1 Formula: (Income / Expenses) * (Active Days / 30)
+    Calculates the hustle score based on a list of parsed transactions
+    and a time period ('week', 'month', or 'all').
     """
+    
+    # --- New Feature: Date Filtering ---
+    # We are in Kenya, so we can use datetime.now()
+    now = datetime.now()
+    start_date = None
+
+    if period == "week":
+        # Start date is 7 days ago
+        start_date = now - timedelta(days=7)
+    elif period == "month":
+        # Start date is 30 days ago
+        start_date = now - timedelta(days=30)
+    
     total_income = 0.0
     total_expenses = 0.0
-    income_days = set()
 
     for tx in transactions:
-        if tx.get("type") == "Credit":
-            total_income += tx.get("amount", 0.0)
-            # We will add date parsing later to track days correctly
-            # For now, we'll simulate a number of active days
-        elif tx.get("type") == "Debit":
-            total_expenses += tx.get("amount", 0.0)
+        tx_type = tx.get("type")
+        tx_date_str = tx.get("date")
+        
+        # Skip if we don't have a date or type
+        if not tx_type or not tx_date_str:
+            continue
+            
+        # --- New Filter Logic ---
+        if start_date:
+            try:
+                # Convert the transaction's date string back into a datetime object
+                tx_date = datetime.fromisoformat(tx_date_str)
+                # If the transaction date is *before* our start date, skip it
+                if tx_date < start_date:
+                    continue
+            except (ValueError, TypeError):
+                continue # Skip if date is invalid
 
-    # Prevent division by zero
+        # --- Original Calculation Logic ---
+        amount = tx.get("amount", 0.0)
+        if tx_type == "Credit":
+            total_income += amount
+        elif tx_type == "Debit":
+            total_expenses += amount
+
+    # Calculate score
     if total_expenses == 0:
-        cash_flow_ratio = 1.0
+        # If no expenses, score is 100 (or 50 if no income either)
+        score = 100 if total_income > 0 else 50
     else:
-        cash_flow_ratio = total_income / total_expenses
-
-    # --- SIMULATION FOR DEMO ---
-    # In a real scenario, we'd parse timestamps and count unique days.
-    # For now, let's assume 15 active income days for this batch.
-    active_days = 15
-    consistency_score = active_days / 30.0
-    # --- END SIMULATION ---
-    
-    # Calculate final score (scaled to 100)
-    hustle_score = cash_flow_ratio * consistency_score * 100
+        # Our original formula
+        ratio = total_income / total_expenses
+        score = int(ratio * 50)
+        # Cap the score at 100
+        score = min(score, 100)
 
     return {
-        "score": min(int(hustle_score), 100), # Cap score at 100
+        "score": score,
         "total_income": total_income,
         "total_expenses": total_expenses,
-        "active_days_simulated": active_days
+        "period": period
     }
