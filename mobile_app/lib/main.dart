@@ -1,33 +1,40 @@
-// mobile_app/lib/main.dart - (FINAL - With Welcome Screen)
+// mobile_app/lib/main.dart
+
+// 1. IMPORT ALL OUR NEW SCREENS
+import 'package:mobile_app/auth/auth_gate.dart';
+import 'package:mobile_app/auth/login_screen.dart';
+import 'package:mobile_app/auth/pin_unlock_screen.dart';
+import 'package:mobile_app/auth/set_pin_screen.dart';
+import 'package:mobile_app/welcome_screen.dart';
+
+// 2. IMPORT ALL THE PACKAGES
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:shared_preferences/shared_preferences.dart'; // We still need this for 'seenWelcome'
 import 'package:telephony/telephony.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
-import 'transactions_screen.dart'; // Import transactions screen
-import 'package:fl_chart/fl_chart.dart'; // IMPORT PIE CHART
-import 'package:shared_preferences/shared_preferences.dart'; // 1. IMPORT
-import 'welcome_screen.dart'; // 2. IMPORT
+import 'transactions_screen.dart';
+import 'package:fl_chart/fl_chart.dart';
 
 // 3. We must check the flag BEFORE the app runs
 Future<void> main() async {
   // Ensure Flutter is initialized
   WidgetsFlutterBinding.ensureInitialized();
-  
-  // Get the shared preferences instance
-  final prefs = await SharedPreferences.getInstance();
-  
-  // Check if 'seenWelcome' is true. If it's null (never set), default to false.
-  final bool seenWelcome = prefs.getBool('seenWelcome') ?? false;
 
-  // Pass the flag to our app
-  runApp(HustlerOSApp(seenWelcome: seenWelcome));
+  // Initialize Supabase
+  await Supabase.initialize(
+    url: 'https://psdmbizgatsitzlgfxxg.supabase.co', //Supabase URL
+    anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBzZG1iaXpnYXRzaXR6bGdmeHhnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI1ODUwMTMsImV4cCI6MjA3ODE2MTAxM30.loiUWYgIdE7G06cpIC04wtkf3FA1lQMGFsp2BzeBorw',
+  );
+
+  // We no longer need the 'seenWelcome' logic here.
+  // The AuthGate will handle it.
+  runApp(const HustlerOSApp());
 }
 
 class HustlerOSApp extends StatelessWidget {
-  // 4. Our app now accepts the flag
-  final bool seenWelcome;
-  
-  const HustlerOSApp({super.key, required this.seenWelcome});
+  const HustlerOSApp({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -38,8 +45,18 @@ class HustlerOSApp extends StatelessWidget {
         useMaterial3: true,
         scaffoldBackgroundColor: const Color(0xFFF0F2F5),
       ),
-      // 5. Logic to show the correct screen
-      home: seenWelcome ? const DashboardScreen() : const WelcomeScreen(),
+      // 3. THE BIG CHANGE:
+      // The AuthGate is now the home of our app.
+      home: const AuthGate(),
+
+      // 4. We can add "routes" so we can navigate by name
+      routes: {
+        '/login': (context) => const LoginScreen(),
+        '/set_pin': (context) => const SetPinScreen(),
+        '/pin_unlock': (context) => const PinUnlockScreen(),
+        '/dashboard': (context) => const DashboardScreen(),
+        '/welcome': (context) => const WelcomeScreen(),
+      },
       debugShowCheckedModeBanner: false,
     );
   }

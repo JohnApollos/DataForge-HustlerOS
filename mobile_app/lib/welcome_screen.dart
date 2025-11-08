@@ -1,7 +1,7 @@
 // mobile_app/lib/welcome_screen.dart
 import 'package:flutter/material.dart';
-import 'package:mobile_app/main.dart'; // We need this to navigate to our Dashboard
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:mobile_app/auth/auth_gate.dart';
 
 class WelcomeScreen extends StatelessWidget {
   const WelcomeScreen({super.key});
@@ -9,18 +9,16 @@ class WelcomeScreen extends StatelessWidget {
   Future<void> _completeWelcome(BuildContext context) async {
     // 1. Get the shared preferences instance
     final prefs = await SharedPreferences.getInstance();
-    
+
     // 2. Set the 'seenWelcome' flag to true
     await prefs.setBool('seenWelcome', true);
 
     // 3. Navigate to the DashboardScreen
     // We use pushReplacement so the user can't press "back"
     // to return to the welcome screen.
-    if (context.mounted) {
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => const DashboardScreen()),
+    Navigator.of(context).pushReplacement(
+        MaterialPageRoute(builder: (context) => const AuthGate()),
       );
-    }
   }
 
   @override
@@ -34,11 +32,7 @@ class WelcomeScreen extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             // Our App Icon
-            Image.asset(
-              'assets/launcher_icon.png',
-              height: 120,
-              width: 120,
-            ),
+            Image.asset('assets/launcher_icon.png', height: 120, width: 120),
             const SizedBox(height: 32),
             const Text(
               'Welcome to\nHustler OS',
