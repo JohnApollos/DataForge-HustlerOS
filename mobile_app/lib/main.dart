@@ -16,6 +16,7 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'transactions_screen.dart';
 import 'package:fl_chart/fl_chart.dart';
+import 'package:mobile_app/add_transaction_screen.dart';
 
 // 3. We must check the flag BEFORE the app runs
 Future<void> main() async {
@@ -86,12 +87,38 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   final Telephony telephony = Telephony.instance;
 
-  Future<void> analyzeSms({String period = "all"}) async {
+  // Function to fetch manual transactions from Supabase
+  Future<List<Map<String, dynamic>>> _fetchManualTransactions(String period) async {
+    final userId = Supabase.instance.client.auth.currentUser!.id;
+    var query = Supabase.instance.client
+        .from('transactions')
+        .select()
+        .eq('user_id', userId);
+
+    // Add date filter based on the period
+    final now = DateTime.now();
+    if (period == 'week') {
+      final startOfWeek = now.subtract(Duration(days: now.weekday - 1));
+      final startDate = DateTime(startOfWeek.year, startOfWeek.month, startOfWeek.day);
+      query = query.gte('date', startDate.toIso8601String());
+    } else if (period == 'month') {
+      final startDate = DateTime(now.year, now.month, 1);
+      query = query.gte('date', startDate.toIso8601String());
+    }
+    // For 'all', we don't add a date filter
+
+    final response = await query;
+    return (response as List).cast<Map<String, dynamic>>();
+  }
+
+  // --- NEW COMBINED DATA FUNCTION ---
+  Future<void> analyzeData({String period = "all"}) async {
     setState(() {
       _isLoading = true;
       _selectedPeriod = period;
     });
 
+    // --- 1. GET VERIFIED M-PESA DATA ---
     if (_allSmsMessages.isEmpty) {
       bool? permissionsGranted = await telephony.requestSmsPermissions;
       if (permissionsGranted != true) {
@@ -103,40 +130,106 @@ class _DashboardScreenState extends State<DashboardScreen> {
         filter: SmsFilter.where(SmsColumn.ADDRESS).equals('MPESA'),
       );
     }
-
     List<String> messageBodies = _allSmsMessages.map((m) => m.body ?? '').toList();
-
-    // This is our LIVE deployed URL
     const String apiBaseUrl = 'https://dataforge-hustleros-production.up.railway.app/analyze';
+
+    double mpesaIncome = 0;
+    double mpesaExpenses = 0;
+    List<dynamic> mpesaTransactions = [];
+    List<dynamic> mpesaTopExpenses = [];
 
     try {
       final response = await http.post(
         Uri.parse(apiBaseUrl),
         headers: {'Content-Type': 'application/json'},
-        body: json.encode({
-          'messages': messageBodies,
-          'period': period,
-        }),
+        body: json.encode({'messages': messageBodies, 'period': period}),
       );
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
+        
+        // Save the M-Pesa data
+        mpesaIncome = data['hustle_score']['total_income'].toDouble();
+        mpesaExpenses = data['hustle_score']['total_expenses'].toDouble();
+        mpesaTransactions = data['parsed_transactions'];
+        mpesaTopExpenses = data['hustle_score']['top_expenses'];
+
+        // SET THE "VERIFIED" HUSTLE SCORE (from M-Pesa only)
         setState(() {
           _hustleScore = data['hustle_score']['score'].toString();
-          _totalIncome = data['hustle_score']['total_income'].toStringAsFixed(0);
-          _totalExpenses = data['hustle_score']['total_expenses'].toStringAsFixed(0);
-          _parsedTransactions = data['parsed_transactions'];
-          _topExpenses = data['hustle_score']['top_expenses'];
+          _topExpenses = mpesaTopExpenses; // For now, pie chart is M-Pesa only
           _touchedIndex = -1;
         });
       }
     } catch (e) {
-      print('Error calling API: $e');
-    } finally {
-      setState(() {
-        _isLoading = false;
-      });
+      // Handle M-Pesa API error
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error analyzing M-Pesa: $e'), backgroundColor: Colors.red),
+        );
+      }
     }
+
+    // --- 2. GET UNVERIFIED CASH DATA ---
+    double manualIncome = 0;
+    double manualExpenses = 0;
+    List<dynamic> manualTransactions = [];
+
+    try {
+      final cashData = await _fetchManualTransactions(period);
+      
+      for (var tx in cashData) {
+        final amount = tx['amount'].toDouble();
+        if (tx['type'] == 'Income') {
+          manualIncome += amount;
+        } else {
+          manualExpenses += amount;
+        }
+        // Convert manual transaction to the same format as M-Pesa transactions
+        manualTransactions.add({
+          'name': tx['category'], // Use category as name
+          'description': tx['description'] ?? '',
+          'amount': amount,
+          'date': tx['date'], // This is already an ISO 8601 string
+          'type': tx['type']
+        });
+      }
+    } catch (e) {
+      // Handle Supabase error
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error fetching cash data: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
+
+    // --- 3. COMBINE ALL DATA AND UPDATE STATE ---
+    
+    // Combine and sort all transactions for the "View All" screen
+    final allTransactions = [...mpesaTransactions, ...manualTransactions];
+    
+    // --- THIS IS THE FIX ---
+    // This sort function is now "null-safe" and will not crash
+    allTransactions.sort((a, b) {
+      // Handle potential null or invalid dates
+      // DateTime.tryParse returns null if it fails (doesn't crash)
+      // We use `?? DateTime(1970)` to provide a default "old" date for any nulls
+      final DateTime dateA = DateTime.tryParse(a['date'] ?? '') ?? DateTime(1970);
+      final DateTime dateB = DateTime.tryParse(b['date'] ?? '') ?? DateTime(1970);
+      return dateB.compareTo(dateA); // Sort descending
+    });
+    // --- END OF FIX ---
+
+    setState(() {
+      // Set the new combined totals
+      _totalIncome = (mpesaIncome + manualIncome).toStringAsFixed(0);
+      _totalExpenses = (mpesaExpenses + manualExpenses).toStringAsFixed(0);
+      
+      // Save the combined list of transactions
+      _parsedTransactions = allTransactions; 
+      
+      _isLoading = false;
+    });
   }
 
   void _openTransactionsPage() {
@@ -160,7 +253,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return name;
   }
 
-  // --- 1. NEW HELPER FUNCTION FOR THE AI TIP ---
+  // --- HELPER FUNCTION FOR THE AI TIP ---
   String _getInsightTip() {
     // Try to parse the score, default to 50 if it's "--"
     final int score = int.tryParse(_hustleScore) ?? 50;
@@ -184,6 +277,21 @@ class _DashboardScreenState extends State<DashboardScreen> {
         backgroundColor: Colors.white,
         elevation: 1,
         title: const Text('Hustler OS Dashboard', style: TextStyle(fontWeight: FontWeight.bold)),
+
+        // New Add Actions Button
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.add_card_outlined),
+            tooltip: 'Add cash transaction',
+            onPressed: () {
+              // This opens our new screen
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const AddTransactionScreen()),
+              );
+            },
+          ),
+        ],
       ),
       body: Stack(
         children: [
@@ -200,7 +308,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   ],
                   selected: {_selectedPeriod},
                   onSelectionChanged: (Set<String> newSelection) {
-                    analyzeSms(period: newSelection.first);
+                    // --- CHANGED ---
+                    analyzeData(period: newSelection.first);
                   },
                 ),
               ),
@@ -219,7 +328,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         style: const TextStyle(fontSize: 60, fontWeight: FontWeight.bold, color: Colors.green),
                       ),
 
-                      // --- 2. NEW AI INSIGHT WIDGET ---
+                      // --- AI INSIGHT WIDGET ---
                       if (_hustleScore != "--") ...[
                         const SizedBox(height: 16),
                         const Divider(),
@@ -252,7 +361,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               if (_topExpenses.isNotEmpty) ...[
                 const SizedBox(height: 16),
                 const Text(
-                  'Top 5 Expenses', 
+                  'Top 5 Expenses (from M-Pesa)', // Clarified title
                   style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)
                 ),
                 const SizedBox(height: 16),
@@ -335,8 +444,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
               color: const Color(0xFFF0F2F5),
               child: ElevatedButton.icon(
                 icon: const Icon(Icons.sms),
-                label: _isLoading ? const CircularProgressIndicator(color: Colors.white) : const Text('Analyze M-Pesa SMS'),
-                onPressed: _isLoading ? () {} : () => analyzeSms(period: 'all'),
+                // --- CHANGED ---
+                label: _isLoading ? const CircularProgressIndicator(color: Colors.white) : const Text('Analyze Data'),
+                // --- CHANGED ---
+                onPressed: _isLoading ? () {} : () => analyzeData(period: 'all'),
                 style: ElevatedButton.styleFrom(
                   minimumSize: const Size(double.infinity, 56),
                   padding: const EdgeInsets.symmetric(vertical: 16),
@@ -364,6 +475,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     ];
     
     final total = _topExpenses.fold(0.0, (sum, item) => sum + item['amount']);
+    if (total == 0) return []; // Avoid division by zero
 
     return List.generate(_topExpenses.length, (index) {
       final isTouched = index == _touchedIndex;
