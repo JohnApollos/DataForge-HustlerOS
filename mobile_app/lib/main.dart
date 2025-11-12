@@ -6,6 +6,7 @@ import 'package:mobile_app/auth/login_screen.dart';
 import 'package:mobile_app/auth/pin_unlock_screen.dart';
 import 'package:mobile_app/auth/set_pin_screen.dart';
 import 'package:mobile_app/welcome_screen.dart';
+import 'package:mobile_app/invoicing_screen.dart';
 
 // 2. IMPORT ALL THE PACKAGES
 import 'package:flutter/material.dart';
@@ -139,10 +140,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
     List<dynamic> mpesaTopExpenses = [];
 
     try {
+      // Get the current user's ID
+      final userId = Supabase.instance.client.auth.currentUser!.id;
+
       final response = await http.post(
         Uri.parse(apiBaseUrl),
         headers: {'Content-Type': 'application/json'},
-        body: json.encode({'messages': messageBodies, 'period': period}),
+        body: json.encode({'messages': messageBodies, 'period': period, 'user_id': userId}),
       );
 
       if (response.statusCode == 200) {
@@ -278,8 +282,20 @@ class _DashboardScreenState extends State<DashboardScreen> {
         elevation: 1,
         title: const Text('Hustler OS Dashboard', style: TextStyle(fontWeight: FontWeight.bold)),
 
-        // New Add Actions Button
         actions: [
+          // --- ADD THIS NEW BUTTON ---
+          IconButton(
+            icon: const Icon(Icons.receipt_long_outlined),
+            tooltip: 'View Invoices',
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const InvoicingScreen()),
+              );
+            },
+          ),
+          // --- END OF NEW BUTTON ---
+
           IconButton(
             icon: const Icon(Icons.add_card_outlined),
             tooltip: 'Add cash transaction',
